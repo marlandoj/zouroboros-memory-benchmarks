@@ -8,8 +8,8 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 |-----------|-------|--------|-------|------|
 | LongMemEval (full S, real embeddings) | **81.5%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
-| LoCoMo | *running* | gpt-5-mini | gpt-4o | — |
-| BEAM (128K) | *running* | gpt-5-mini | gpt-4o | — |
+| LoCoMo | **40.5%** | gpt-5-mini | gpt-4o | 2026-10-16 |
+| BEAM (100K) | **45.9%** | gpt-5-mini | gpt-4o | 2026-10-16 |
 
 ## LongMemEval Detail (81.5% run)
 
@@ -38,3 +38,37 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 ## License
 
 Results published under CC BY 4.0. Benchmark datasets retain their original licenses.
+
+## LoCoMo Detail (40.5% run)
+
+1,986 questions, 0 errors. Reader gpt-5-mini, judge gpt-4o. K=10.
+
+| Category | n | Accuracy |
+|----------|---|----------|
+| open-domain | 841 | 55.8% |
+| adversarial | 446 | 30.3% |
+| single-hop | 282 | 30.1% |
+| temporal | 96 | 28.1% |
+| multi-hop | 321 | 27.7% |
+
+**Evidence recall@K:** 61.0% — K=10 misses 39% of evidence. Published baselines (Mem0 92.5%, Zep 94.7%) use top-200 retrieval. Widening K is the next experiment.
+**Cost:** $2.98
+
+## BEAM Detail (45.9% run, 100K tier)
+
+400 questions (20 chats x 20), 0 errors. Nugget-rubric scoring via gpt-4o.
+
+| Ability | Accuracy |
+|---------|----------|
+| preference_following | 85.0% |
+| temporal_reasoning | 58.8% |
+| instruction_following | 55.0% |
+| information_extraction | 53.2% |
+| knowledge_update | 50.0% |
+| abstention | 47.5% |
+| contradiction_resolution | 43.1% |
+| multi_session_reasoning | 38.8% |
+| summarization | 19.5% |
+| event_ordering | 7.7% |
+
+**Cost:** $3.41
