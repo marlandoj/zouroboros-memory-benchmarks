@@ -8,7 +8,7 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 |-----------|-------|--------|-------|------|
 | LongMemEval (full S, real embeddings) | **81.5%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
-| LoCoMo | **40.5%** | gpt-5-mini | gpt-4o | 2026-10-16 |
+| LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
 
 ## LongMemEval Detail (81.5% run)
@@ -51,8 +51,8 @@ Results published under CC BY 4.0. Benchmark datasets retain their original lice
 | temporal | 96 | 28.1% |
 | multi-hop | 321 | 27.7% |
 
-**Evidence recall@K:** 61.0% — K=10 misses 39% of evidence. Published baselines (Mem0 92.5%, Zep 94.7%) use top-200 retrieval. Widening K is the next experiment.
-**Cost:** $2.98
+**Evidence recall@K:** 62.0% at K=100 (was 61.0% at K=10) — widening K barely moved the needle (+0.2pp overall). The problem isn't retrieval breadth, it's retrieval quality. Published baselines (Mem0 92.5%, Zep 94.7%) likely benefit from better ranking, not just wider K.
+**Cost:** $3.06
 
 ## BEAM Detail (45.9% run, 100K tier)
 
