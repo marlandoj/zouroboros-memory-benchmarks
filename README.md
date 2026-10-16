@@ -85,3 +85,9 @@ Sorting retrieved facts chronologically before the reader (instead of by relevan
 | preference_following | 85.0% | 75.4% | −9.6 |
 
 Chronological order helps temporal questions but buries preference signals. Next: ability-aware ordering (chrono ON for temporal abilities, OFF for preference).
+
+### Ability-aware chrono (47.0%, -0.8pp vs global chrono)
+
+Chrono ON for event_ordering, temporal_reasoning, contradiction_resolution, knowledge_update, information_extraction, multi_session_reasoning; OFF for preference_following, summarization, abstention, instruction_following.
+
+**Key finding: high run-to-run variance.** Abilities with identical code paths moved ±3-7pp between runs (event_ordering -3.1, info_extraction -4.2, knowledge_update +7.5 — all chrono ON in both runs). LLM reader/judge non-determinism is the noise floor. Single-run per-ability deltas should not be over-interpreted; 2-3 repeat runs needed to separate signal from noise.
