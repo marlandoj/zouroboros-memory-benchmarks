@@ -9,7 +9,7 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 | LongMemEval (full S, real embeddings) | **81.5%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LoCoMo | **40.5%** | gpt-5-mini | gpt-4o | 2026-10-16 |
-| BEAM (100K) | **45.9%** | gpt-5-mini | gpt-4o | 2026-10-16 |
+| BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
 
 ## LongMemEval Detail (81.5% run)
 
@@ -72,3 +72,16 @@ Results published under CC BY 4.0. Benchmark datasets retain their original lice
 | event_ordering | 7.7% |
 
 **Cost:** $3.41
+
+### Chronological context (+1.9pp → 47.8%)
+
+Sorting retrieved facts chronologically before the reader (instead of by relevance score):
+
+| Ability | Baseline | Chrono | Δ |
+|---------|----------|--------|---|
+| event_ordering | 7.7% | 14.2% | +6.5 |
+| contradiction_resolution | 43.1% | 51.2% | +8.1 |
+| information_extraction | 53.2% | 61.4% | +8.2 |
+| preference_following | 85.0% | 75.4% | −9.6 |
+
+Chronological order helps temporal questions but buries preference signals. Next: ability-aware ordering (chrono ON for temporal abilities, OFF for preference).
