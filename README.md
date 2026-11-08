@@ -6,10 +6,88 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 
 | Benchmark | Score | Reader | Judge | Date |
 |-----------|-------|--------|-------|------|
+| LongMemEval (full S, real embeddings) | **85.4%** | gpt-6.1-sol | gpt-4o | 2026-11-08 |
+| LongMemEval (full S, current-judge variant) | **83.4%** | gpt-6.1-sol | gpt-6.1-sol | 2026-11-08 |
+| LoCoMo | **42.8%** (K=10) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
+| BEAM (100K) | **54.4%** (ability-aware chrono) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | LongMemEval (full S, real embeddings) | **81.5%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
+
+## 2026-11-08 Re-run — current reader (gpt-6.1-sol)
+
+Same system, same retrieval, same harness configuration as the October runs — the only change is the reader generation (gpt-5-mini → gpt-6.1-sol), selected by a measured shootout rather than by name. Primary judge stays gpt-4o (the official LongMemEval judge, and still the judge used by current published leaderboards) so the new numbers are directly comparable to the October numbers.
+
+**Reader shootout** (100-question stratified LongMemEval probe, gpt-4o judge; control = the published gpt-5-mini configuration on the same 100 questions):
+
+| Reader | Probe score | vs control |
+|--------|-------------|------------|
+| gpt-6.1-sol | **88.0%** | +4.0pp |
+| gpt-5-mini (control) | 84.0% | — |
+| gpt-5.6-sol | 84.0% | ±0.0pp |
+| gpt-5.6-luna | 80.0% | −4.0pp |
+
+### LongMemEval Detail (85.4% run)
+
+500 questions, 0 errors. Real OpenAI embeddings. K=10, vector threshold 0.2, baseline path — identical to the 81.5% run.
+
+| Category | n | 2026-11-08 | 2026-10-15 | Δ |
+|----------|---|------------|------------|---|
+| Knowledge update | 78 | 92.3% | 87.2% | +5.1 |
+| Multi-session | 133 | 73.7% | 74.4% | −0.7 |
+| Single-session assistant | 56 | 100.0% | 100.0% | ±0.0 |
+| Single-session preference | 30 | 96.7% | 53.3% | **+43.4** |
+| Single-session user | 70 | 97.1% | 95.7% | +1.4 |
+| Temporal reasoning | 133 | 78.2% | 76.5% | +1.7 |
+| Abstention | 30 | 73.3% | 80.0% | −6.7 |
+
+**Retrieval:** Session recall@K 98.9%, evidence-turn recall@K 93.6% — identical to the October run, so the +3.9pp overall is attributable to the reader alone.
+**Dual judge:** the same 500 answers scored 83.4% under a gpt-6.1-sol judge (judges agree on 97.2% of questions) — the current-generation judge is ~2pp stricter than gpt-4o on identical output.
+**Cost:** $5.28 (embeddings $1.07, reader $3.76, gpt-4o judge $0.24, gpt-6.1-sol judge $0.21)
+
+### LoCoMo Detail (42.8% run)
+
+1,986 questions, 0 errors. Reader gpt-6.1-sol, judge gpt-4o. K=10.
+
+| Category | n | 2026-11-08 | 2026-10-16 (K=10) | Δ |
+|----------|---|------------|-------------------|---|
+| open-domain | 841 | 55.2% | 55.8% | −0.6 |
+| adversarial | 446 | 39.0% | 30.3% | +8.7 |
+| single-hop | 282 | 28.7% | 30.1% | −1.4 |
+| temporal | 96 | 31.3% | 28.1% | +3.2 |
+| multi-hop | 321 | 31.5% | 27.7% | +3.8 |
+
+**Evidence recall@K:** 61.1% — unchanged from October (61.0%). The stronger reader bought only +2.3pp overall because ~39% of the evidence still never reaches it. LoCoMo remains **retrieval-ranking-bound**, exactly as diagnosed in October; the new run also beats the old K=100 headline (40.7%) while using K=10.
+**Cost:** $3.80 (embeddings $0.74, reader $2.50, judge $0.55)
+
+### BEAM Detail (54.4% run, 100K tier)
+
+400 questions (20 chats x 20), 0 errors. Nugget-rubric scoring via gpt-4o. Ability-aware chronological context (the configuration that scored 47.0% in October).
+
+| Ability | n | 2026-11-08 | 2026-10-16 (ability-aware) | Δ |
+|---------|---|------------|----------------------------|---|
+| preference_following | 40 | 92.5% | 76.3% | +16.2 |
+| instruction_following | 40 | 63.7% | 51.2% | +12.5 |
+| knowledge_update | 40 | 62.5% | 60.0% | +2.5 |
+| temporal_reasoning | 40 | 62.5% | 61.3% | +1.2 |
+| information_extraction | 40 | 55.3% | 57.2% | −1.9 |
+| abstention | 40 | 52.5% | 45.0% | +7.5 |
+| multi_session_reasoning | 40 | 50.3% | 34.3% | +16.0 |
+| contradiction_resolution | 40 | 48.1% | 53.8% | −5.7 |
+| event_ordering | 40 | 29.4% | 11.1% | +18.3 |
+| summarization | 40 | 27.4% | 20.1% | +7.3 |
+
+Per-ability deltas inside the ±3–7pp run-to-run variance band documented below (information_extraction, contradiction_resolution) should not be over-interpreted. Summarization remains the structural weakness.
+**Cost:** $7.67 (embeddings $1.03, reader $5.65, judge $0.99)
+
+### Re-run findings
+
+- A reader generation is worth **+3.9pp (LongMemEval), +2.3pp (LoCoMo), +7.4pp (BEAM)** on identical retrieval — but the three benchmarks bottleneck in different places, and only two of them pay the reader dividend in full.
+- The LongMemEval preference weakness was a **reader** limitation (53.3% → 96.7%); multi-session aggregation did not move (74.4% → 73.7%) and remains a structural ceiling.
+- LoCoMo is **retrieval-bound**: evidence recall@K is flat at ~61% across reader generations.
+- The stronger reader abstains less on LongMemEval (80.0% → 73.3%) — it answers questions the weaker reader correctly declined.
+- Total re-run programme cost (shootout + three full runs + smokes): **~$20.00**.
 
 ## LongMemEval Detail (81.5% run)
 
@@ -34,6 +112,7 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 - **Reader/Judge:** gpt-5-mini / gpt-4o (official LongMemEval judge prompts)
 - **Embeddings:** OpenAI `text-embedding-3-small`
 - **Reproduction:** harness in `zouroboros-workspace` (`packages/memory/src/longmemeval/`)
+- **2026-11 re-run:** reader gpt-6.1-sol / judge gpt-4o (dual-judged with gpt-6.1-sol on LongMemEval); harness in the Zouroboros monorepo, branch `bench/longmemeval-adapter`, commit `a1b453f4` (adds GPT-6-class request handling and current-model pricing). Retrieval, embeddings, K and thresholds unchanged from October.
 
 ## License
 
