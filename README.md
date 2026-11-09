@@ -8,6 +8,7 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 |-----------|-------|--------|-------|------|
 | LongMemEval (full S, real embeddings) | **85.4%** | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | LongMemEval (full S, current-judge variant) | **83.4%** | gpt-6.1-sol | gpt-6.1-sol | 2026-11-08 |
+| LoCoMo | **58.3%** (K=10, threshold 0.2, text-embedding-3-large) | gpt-6.1-sol | gpt-4o | 2026-11-09 |
 | LoCoMo | **53.5%** (K=10, vector threshold 0.2) | gpt-6.1-sol | gpt-4o | 2026-11-09 |
 | LoCoMo | **42.8%** (K=10) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | BEAM (100K) | **54.4%** (ability-aware chrono) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
@@ -15,6 +16,30 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
+
+## 2026-11-09 LoCoMo — embedding model upgrade (58.3%)
+
+The only change in this run is the embedding model: **text-embedding-3-small (1536d) → text-embedding-3-large (3072d)**. Reader, judge, threshold (0.2), and K are unchanged from the 53.5% run below.
+
+This result reverses an earlier measurement, and the reversal is the interesting part. Under the old 0.46 gate, a paired probe of the two embedders was a coin toss (recall 63.2% vs 63.4%) — the gate discarded so much evidence before ranking that embedder quality was invisible. With the gate at 0.2, ranking decides, and a paired re-probe at 0.2 showed 3-large ahead +4.6pp on recall@10 over a 495-question subset (recall@30 was level — the larger model *ranks* better; it does not find evidence the small one misses entirely). The full-set run below confirms the subset signal.
+
+1,986 questions, 0 errors, paired against the 53.5% run question-by-question.
+
+| Category | n | 3-large | 3-small (t=0.2) | Δ |
+|----------|---|---------|-----------------|---|
+| open-domain | 841 | 80.9% | 73.7% | +7.1 |
+| adversarial | 446 | 18.6% | 22.9% | −4.3 |
+| single-hop | 282 | 51.4% | 41.5% | +9.9 |
+| temporal | 96 | 51.0% | 49.0% | +2.1 |
+| multi-hop | 321 | 62.3% | 54.8% | +7.5 |
+| **overall** | 1986 | **58.3%** | 53.5% | **+4.8** |
+
+**Evidence recall@K:** 91.3%, up from 87.7% — paired flips **+113 gained / 41 lost**. Accuracy flips +190 / −95, a net +95 questions answered correctly.
+
+**The disclosed cost:** adversarial accuracy fell a further 4.3pp — the same mechanism as the threshold fix, one level deeper. Better retrieval surfaces more of the planted false presuppositions (23 adversarial questions flipped from recall-miss to recall-hit) and the reader still follows them. Adversarial now stands at 18.6%, against 39.0% in the 0.46 era: the cumulative price of actually retrieving what the conversations say, reported here rather than averaged away.
+
+**Adoption:** text-embedding-3-large at its native 3072 dimensions is now the production embedder (zouroboros-workspace PR #1096, merged 2026-11-09), shipped together with a re-embedding migration for existing stores — stored vectors are dimension-filtered, so a model switch without a backfill would blind the vector leg. Embedding unit cost rises 6.5× ($0.02 → $0.13 per 1M tokens); at benchmark scale that is ~$0.02 of this run.
+**Cost:** ~$5.08 (reader $4.50, judge $0.56, embeddings ~$0.02)
 
 ## 2026-11-09 LoCoMo — vector threshold fix (53.5%)
 
