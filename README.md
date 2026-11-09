@@ -8,12 +8,35 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 |-----------|-------|--------|-------|------|
 | LongMemEval (full S, real embeddings) | **85.4%** | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | LongMemEval (full S, current-judge variant) | **83.4%** | gpt-6.1-sol | gpt-6.1-sol | 2026-11-08 |
+| LoCoMo | **53.5%** (K=10, vector threshold 0.2) | gpt-6.1-sol | gpt-4o | 2026-11-09 |
 | LoCoMo | **42.8%** (K=10) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | BEAM (100K) | **54.4%** (ability-aware chrono) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 | LongMemEval (full S, real embeddings) | **81.5%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
+
+## 2026-11-09 LoCoMo — vector threshold fix (53.5%)
+
+The 2026-11-08 run below diagnosed LoCoMo as "retrieval-ranking-bound." A miss autopsy on 2026-11-09 showed that diagnosis was wrong about the mechanism: extraction was complete and the fusion ranking was innocent — **96% of missed evidence existed in the store but was discarded by the vector leg's 0.46 similarity gate before ranking ever saw it** (median best-cosine of the discarded evidence: 0.415). The only change in this run is that gate: vector similarity threshold 0.46 → 0.2, the same value the LongMemEval runs already used. Reader, judge, embeddings, and K are unchanged.
+
+1,986 questions, 0 errors. Reader gpt-6.1-sol, judge gpt-4o, K=10.
+
+| Category | n | 2026-11-09 (t=0.2) | 2026-11-08 (t=0.46) | Δ |
+|----------|---|--------------------|---------------------|---|
+| open-domain | 841 | 73.7% | 55.2% | +18.5 |
+| adversarial | 446 | 22.9% | 39.0% | −16.1 |
+| single-hop | 282 | 41.5% | 28.7% | +12.8 |
+| temporal | 96 | 49.0% | 31.3% | +17.7 |
+| multi-hop | 321 | 54.8% | 31.5% | +23.4 |
+| **overall** | 1986 | **53.5%** | 42.8% | **+10.7** |
+
+**Evidence recall@K:** 87.7%, up from 61.1% — paired per-question flips **+527 gained / 0 lost**: lowering the gate displaced not one previously-retrieved evidence set. Net +212 questions answered correctly.
+
+**The disclosed cost:** adversarial accuracy fell 16.1pp. LoCoMo's adversarial questions plant false presuppositions in the conversations; at the old threshold the planted sessions usually never reached the reader, and at 0.2 they do — 67 of the 89 adversarial losses are questions where retrieval newly surfaced the planted session and the reader followed it. This is a reader-robustness problem exposed by better recall, not a retrieval defect, and it is reported here rather than averaged away. Average reader context grew from 1,252 to 2,744 chars per question.
+
+**Adoption:** 0.2 is now the production default (`DEFAULT_VECTOR_SIMILARITY_THRESHOLD`), adopted on this evidence under pre-registered bars (full-set recall ≥ 66%, accuracy ≥ 44% — both passed by wide margins).
+**Cost:** ~$5.11 (reader $4.55, judge $0.56, embeddings ~$0.01)
 
 ## 2026-11-08 Re-run — current reader (gpt-6.1-sol)
 
