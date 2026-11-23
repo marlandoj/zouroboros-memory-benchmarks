@@ -17,6 +17,10 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
 
+## 2026-11-23 past.dev parity decomposition — stopped before smokes
+
+The commissioned Arm A and Arm B runs did **not** measure new scores: the exact LoCoMo/BEAM runners and November per-question JSONL were unavailable, so no paired delta is claimed. The exact Arm B OpenRouter model probe passed. The audit did confirm that four November LoCoMo category labels are mapped to the wrong dataset codes; the category counts themselves are correct. Dataset/prompt hashes, probe evidence, blocked decomposition tables, and resume requirements are in [the parity report](parity-2026-11-23.md).
+
 ## 2026-11-09 LoCoMo — embedding model upgrade (58.3%)
 
 The only change in this run is the embedding model: **text-embedding-3-small (1536d) → text-embedding-3-large (3072d)**. Reader, judge, threshold (0.2), and K are unchanged from the 53.5% run below.
