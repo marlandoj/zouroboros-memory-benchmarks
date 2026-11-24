@@ -255,9 +255,16 @@ def stage_prepare() -> None:
 def stage_ingest() -> None:
     assert_plugin_from_persisted_copy()
     # Establish the run identity before any evidence files exist (the Runner
-    # refuses to adopt a directory that already holds JSON evidence).
+    # refuses to adopt a directory that already holds JSON evidence). The adapter's
+    # constructor writes its controller-side config (hermes/zo.json, not evidence) first,
+    # so set it aside while the Runner writes run.json, then put it back unchanged.
     if not (OUT / "run.json").exists():
-        make_runner(make_adapter(), allow_paid=False)
+        adapter = make_adapter()
+        config = OUT / "hermes" / "zo.json"
+        content = config.read_bytes()
+        config.unlink()
+        make_runner(adapter, allow_paid=False)
+        config.write_bytes(content)
     history = RUN / "history-morgan.jsonl"
     if not history.exists():
         subprocess.run([str(VENV_PYTHON), str(RUNNER_DIR / "export_history.py"), PERSONA, str(history)],
