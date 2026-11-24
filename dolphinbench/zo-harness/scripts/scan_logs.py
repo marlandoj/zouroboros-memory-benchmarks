@@ -55,6 +55,8 @@ def main() -> None:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--secrets", type=Path)
     parser.add_argument("--extra", type=Path, nargs="*", default=[])
+    parser.add_argument("--exclude", type=Path, nargs="*", default=[],
+                        help="trees that are not run output (e.g. a Hermes source checkout + venv)")
     args = parser.parse_args()
     secrets = load_secrets(args.secrets)
     ledger = args.run_dir / "issued-token-hashes.txt"
@@ -69,6 +71,8 @@ def main() -> None:
             continue
         for path in root.rglob("*"):
             if args.secrets and args.secrets in path.parents:
+                continue
+            if any(excluded == path or excluded in path.parents for excluded in args.exclude):
                 continue
             if path.is_file() and not path.is_symlink():
                 files.append(path)
