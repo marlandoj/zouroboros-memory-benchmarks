@@ -1,0 +1,4 @@
+name: zo
+version: 0.1.0
+description: "Zouroboros memory — recall from the frozen DolphinBench persona store via the zo_recall tool. Ingestion is direct (adapter-side); the agent never writes."
+pip_dependencies: []
