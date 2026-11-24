@@ -2,7 +2,23 @@
 
 Published benchmark results for the **Zouroboros Intelligence Plane** memory system.
 
-## Results
+## Current results (2026-11-23)
+
+The headline numbers are the past.dev parity runs of 2026-11-23: Zouroboros retrieval scored under matched conditions (up to 100 results, 8,000-token evidence budget, text-embedding-3-large, threshold 0.2). Full detail in [the parity report](parity-2026-11-23.md) and [the Arm C follow-up](arm-c-2026-11-23.md).
+
+| Benchmark | Score | Configuration | Reader | Judge | Date |
+|-----------|-------|---------------|--------|-------|------|
+| BEAM (100K) | **88.27%** | Parity retrieval + ExaBase prompts | gpt-5.6-luna | gpt-5.6-luna | 2026-11-23 |
+| BEAM (100K) | **60.03%** | Parity retrieval, own prompts/models | gpt-6.1-sol | gpt-4o | 2026-11-23 |
+| BEAM (100K) | **54.42%** | November baseline (K=10) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
+| LoCoMo (corrected keys, ex-adversarial, n=1,540) | **81.95%** | Parity retrieval | gpt-6.1-sol | gpt-4o | 2026-11-23 |
+| LoCoMo (original keys, all categories, n=1,986) | **70.24%** | Parity retrieval | gpt-6.1-sol | gpt-4o | 2026-11-23 |
+| LoCoMo | **58.3%** | November published (K=10, threshold 0.2, text-embedding-3-large) | gpt-6.1-sol | gpt-4o | 2026-11-09 |
+| LongMemEval (full S, real embeddings) | **85.4%** | No newer run; November figure stands | gpt-6.1-sol | gpt-4o | 2026-11-08 |
+
+Against past.dev's published figures (BEAM 100K 92.08%, LoCoMo 93.12%), the parity decomposition attributes the BEAM gap as +5.60pp configuration, +28.25pp prompt/model/judge, and a +3.81pp residual; LoCoMo's parity view leaves an +11.17pp residual with no prompt/model arm run. Arm C (2026-11-23) further showed reader-side reasoning recovers +3.81pp pooled on the three weakest BEAM abilities over the re-run control, beyond the measured 2.74pp nondeterminism band.
+
+## Results history
 
 | Benchmark | Score | Reader | Judge | Date |
 |-----------|-------|--------|-------|------|
