@@ -7,10 +7,9 @@ same model, on the same host, with the request's own reasoning effort, tools and
 stream back as OpenRouter sends them. Hermes and its profile are unchanged; only the endpoint's
 address is the relay's.
 
-    export OPENROUTER_API_KEY=...
-    export AZURE_FOUNDRY_API_KEY=$(python -c "import secrets; print(secrets.token_hex(16))")
-    export AZURE_OPENAI_BASE_URL=http://host.docker.internal:8766/openai/v1
-    python agent_relay.py &
+    # Zouroboros persisted copy: started by scripts/launch.sh as a systemd --user unit, with
+    # OPENROUTER_API_KEY from a 0600 env-file (EnvironmentFile=), never a command line.
+    AGENT_RELAY_TOKENS=<0700 dir> AGENT_RELAY_HOST=0.0.0.0 python agent_relay.py
 
 An answer OpenRouter completes with no output at all (the model had nothing to say, typically
 after a tool call) is relayed as is; Hermes takes it for a broken response and sends the same
@@ -18,13 +17,15 @@ request again, eight times over about nine minutes. The relay answers a repeat o
 answer was empty with a 400 `empty_completion` instead of asking again, so the turn ends there,
 as the model left it.
 
-AZURE_FOUNDRY_API_KEY is only a local password between Hermes and the relay. A key of the form
-`<password>.<tag>` tags the call: each call's start, then its end with the cost OpenRouter reports,
+AZURE_FOUNDRY_API_KEY is only a local capability between Hermes and the relay, of the form
+`<token>.<tag>`; the token is registered for one interaction only (see _tag). The tag tags the
+call: each call's start, then its end with the cost OpenRouter reports,
 is appended to AGENT_RELAY_LOG (default agent-relay.jsonl) and, for a tagged call, to
 AGENT_RELAY_TAGS/<tag>.jsonl, so a caller can sum what one agent turn cost.
 """
 
 import hashlib
+import hmac
 import http.server
 import json
 import os
@@ -51,6 +52,8 @@ class Relay(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
+        if self.path.split("?")[0] == "/healthz":
+            return self._answer(200, {"ok": True})
         if self._tag() is False:
             return self._answer(401, {"error": "unauthorized"})
         if self.path.split("?")[0].endswith("/models"):
@@ -143,15 +146,23 @@ class Relay(http.server.BaseHTTPRequestHandler):
                   "usage": usage, **({"error": error} if error else {}), **({"empty_completion": "first"} if empty else {})})
 
     def _tag(self):
-        """None for the bare password, the tag for `<password>.<tag>`, False for anything else."""
-        token = os.environ["AZURE_FOUNDRY_API_KEY"]
+        """The tag for `<token>.<tag>` when <token> is registered for exactly that tag, else False.
+
+        Zouroboros change (persisted copy): no shared password. AGENT_RELAY_TOKENS is a 0700
+        directory holding one file per live interaction, named by the SHA-256 of its token and
+        containing its tag; the harness creates it before the interaction and deletes it after,
+        so a token works for one interaction only. The relay never sees a stored token value."""
         bearer = self.headers.get("Authorization", "")
         offered = self.headers.get("api-key") or (bearer[7:] if bearer.startswith("Bearer ") else "")
-        if offered == token:
-            return None
-        if offered.startswith(token + ".") and TAG.match(offered[len(token) + 1:]):
-            return offered[len(token) + 1:]
-        return False
+        token, _, tag = offered.partition(".")
+        if not token or not TAG.match(tag):
+            return False
+        path = Path(os.environ["AGENT_RELAY_TOKENS"]) / hashlib.sha256(token.encode()).hexdigest()
+        try:
+            registered = path.read_text()
+        except OSError:
+            return False
+        return tag if hmac.compare_digest(registered, tag) else False
 
     def _answer(self, status, value):
         data = json.dumps(value).encode()
@@ -239,7 +250,9 @@ def log(tag, record):
 
 
 if __name__ == "__main__":
-    for name in ("OPENROUTER_API_KEY", "AZURE_FOUNDRY_API_KEY"):
-        if not os.environ.get(name):
-            sys.exit(f"Set {name}")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        sys.exit("Set OPENROUTER_API_KEY (from an env-file, never on a command line)")
+    tokens = Path(os.environ.get("AGENT_RELAY_TOKENS", ""))
+    if not tokens.is_dir() or tokens.stat().st_mode & 0o077:
+        sys.exit("Set AGENT_RELAY_TOKENS to an existing 0700 directory")
     http.server.ThreadingHTTPServer((os.environ.get("AGENT_RELAY_HOST", "127.0.0.1"), PORT), Relay).serve_forever()

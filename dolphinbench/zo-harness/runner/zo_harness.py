@@ -9,7 +9,8 @@ Differences from the full-benchmark procedure, per the smoke commission:
 - Ingestion is adapter-side and direct: every history message is ingested through the
   Zouroboros memory system's standard ingest path (packages/memory/src/dolphinbench) with its
   timestamp, not through per-message Hermes turns. The store is then locked (PRAGMA query_only
-  plus an adapter lock) and checkpointed (row counts + DB file hash).
+  plus an adapter lock) and checkpointed (v2: SHA-256 over the ordered dolphinbench-scoped
+  rows plus row counts; the DB file hash is informational only).
 - Tests run on the benchmark's official test-phase toolsets: dolphinbench-apps, memory,
   session_search (reference/artifacts.py MATRIX_TOOLSETS at 81cb6f8). The agent recalls through
   the plugin's zo_recall tool against the frozen store served by the adapter server.
@@ -20,7 +21,17 @@ Differences from the full-benchmark procedure, per the smoke commission:
 
 Environment (see run_smoke.py): DOLPHINBENCH_HERMES_SOURCE, DOLPHINBENCH_HERMES_PYTHON,
 DOLPHINBENCH_APP_PYTHON, AZURE_OPENAI_BASE_URL (agent relay), ZO_ADAPTER_URL,
-AGENT_RELAY_PASSWORD, AGENT_RELAY_TAGS, AZURE_FOUNDRY_API_KEY is set per interaction.
+AGENT_RELAY_TOKENS, AGENT_RELAY_TAGS. AZURE_FOUNDRY_API_KEY is set per interaction.
+
+Secret hygiene (0.3.0). The benchmark's container launcher passes the agent's provider
+variables to `docker create` as `--env NAME=VALUE` arguments, and an error dump of that
+command once wrote a real key into a log. So no provider credential is ever in this process's
+environment (run_smoke.py refuses to start if one is). The only value the agent container
+receives is AZURE_FOUNDRY_API_KEY = `<token>.<tag>`, where <token> is minted for one
+interaction, registered with the agent relay by its SHA-256 only (AGENT_RELAY_TOKENS/<hash>,
+content = the tag), and deregistered when the interaction ends. A copy of that value in any
+log is a revoked, single-interaction relay capability, never a provider key; the post-run
+scan (scripts/scan_logs.py) checks every log for it by hash.
 """
 
 from __future__ import annotations
@@ -28,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import subprocess
 import time
 import urllib.request
@@ -64,7 +76,9 @@ def env_overlay(values: dict):
             else:
                 os.environ[key] = value
 
-ADAPTER_VERSION = "0.2.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+ADAPTER_VERSION = "0.3.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+# 0.3.0: persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness); per-interaction
+# relay tokens instead of a shared relay password; repair logic unchanged from 0.2.0.
 ROOT = Path(harness.__file__).resolve().parents[1]
 # The benchmark's official test-phase toolsets (reference/artifacts.py MATRIX_TOOLSETS @81cb6f8).
 BENCH_TOOLSETS = ["dolphinbench-apps", "memory", "session_search"]
@@ -77,7 +91,7 @@ AGENT_SPEC = json.loads((ROOT / "examples/reference/hermes-builtin.json").read_t
 DIFF_FLAGS = ["--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-renames",
               "--src-prefix=a/", "--dst-prefix=b/", "--unified=3"]
 OPTIONS = {"source_env", "python_env", "app_python_env", "base_url_env", "zo_url_env",
-           "relay_password_env"}
+           "relay_tokens_env"}
 EMBEDDING_PRICE_PER_TOKEN = 0.02 / 1_000_000  # text-embedding-3-small, OpenAI list
 
 
@@ -109,7 +123,9 @@ class ZoHermesAdapter(HermesAdapter):
         self.app_python = str(Path(os.environ[options["app_python_env"]]).absolute())
         base_url = os.environ[options["base_url_env"]].rstrip("/")
         self.zo_url = os.environ[options["zo_url_env"]].rstrip("/")
-        self.relay_password = os.environ[options["relay_password_env"]]
+        self.relay_tokens = Path(os.environ[options["relay_tokens_env"]])
+        if not self.relay_tokens.is_dir() or self.relay_tokens.stat().st_mode & 0o077:
+            raise ValueError("The relay token directory must exist with mode 0700")
         self.binary = str(Path(python).parent / "hermes")
         if not Path(self.binary).is_file():
             raise ValueError(f"Hermes binary does not exist: {self.binary}")
@@ -222,14 +238,27 @@ class ZoHermesAdapter(HermesAdapter):
 
     def run_interaction(self, request):
         tag = f"{request.phase}.{request.persona}.{request.interaction_id}"
-        key = f"{self.relay_password}.{tag}"
+        token = secrets.token_hex(16)
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        registration = self.relay_tokens / digest
+        # Only the hash is stored; the issued-hash ledger lets the post-run
+        # scan recognise a leaked token without ever recording its value.
+        with open(self.relay_tokens.parent / "issued-token-hashes.txt", "a") as ledger:
+            ledger.write(f"{digest} {tag}\n")
+        fd = os.open(registration, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(tag)
         # The judge's relay settings are controller-only: the reference container
         # launcher rejects loopback provider URLs in the agent environment.
-        with env_overlay({"AZURE_FOUNDRY_API_KEY": key,
-                          "DOLPHINBENCH_SEED_ITEM_ID": request.interaction_id,
-                          "AZURE_OPENAI_ENDPOINT": None,
-                          "AZURE_OPENAI_API_KEY": None}):
-            record = super().run_interaction(request)
+        try:
+            with env_overlay({"AZURE_FOUNDRY_API_KEY": f"{token}.{tag}",
+                              "DOLPHINBENCH_SEED_ITEM_ID": request.interaction_id,
+                              "AZURE_OPENAI_ENDPOINT": None,
+                              "AZURE_OPENAI_API_KEY": None}):
+                record = super().run_interaction(request)
+        finally:
+            registration.unlink(missing_ok=True)  # revoke: the relay refuses it from now on
+            del token
         if request.phase == "tests":
             self._repair_app_call_args(request, record)
         return record
