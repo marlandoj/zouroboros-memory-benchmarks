@@ -18,9 +18,22 @@ from pathlib import Path
 
 
 def lines(path):
+    """Parsed records of a JSONL log. A line that does not parse (a write cut short, e.g. the
+    2026-11-24 full run's ENOSPC-truncated agent-relay.jsonl lines) is skipped and counted on
+    stderr instead of crashing the cap check; the per-tag logs hold the same records fsynced."""
     if not path.exists():
         return []
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    records, skipped = [], 0
+    for l in path.read_text(errors="replace").splitlines():
+        if not l.strip():
+            continue
+        try:
+            records.append(json.loads(l))
+        except ValueError:
+            skipped += 1
+    if skipped:
+        print(f"full_cost: skipped {skipped} unparseable line(s) in {path}", file=sys.stderr)
+    return records
 
 
 def legs(run: Path) -> dict:
