@@ -29,7 +29,10 @@ log() { echo "$(date -u +%FT%TZ) $*" >> "$STATUS"; }
 PYB() { (. "${CONFS[0]}"; "$DOLPHINBENCH_REPO/.venv/bin/python" "$@"); }
 GUARD='app call has no matching conversation tool call'
 run_dirs=(); for c in "${CONFS[@]}"; do run_dirs+=("$(. "$c"; echo "$ZO_RUN_DIR")"); done
-spent() { PYTHONDONTWRITEBYTECODE=1 PYB "$HERE/full_cost.py" spent "${run_dirs[@]}"; }
+# Superseded attempts (FULL_PRIOR_RUNS, space-separated run dirs) count against the cap.
+read -r -a prior_dirs <<< "${FULL_PRIOR_RUNS:-}"
+export FULL_PRIOR_RUNS="${FULL_PRIOR_RUNS:-}"
+spent() { PYTHONDONTWRITEBYTECODE=1 PYB "$HERE/full_cost.py" spent "${run_dirs[@]}" "${prior_dirs[@]}"; }
 over_cap() { awk -v s="$(spent)" -v c="$CAP" 'BEGIN { exit !(s >= c) }'; }
 
 run_stage() {  # conf stage -> rc   (each stage is its own transient systemd --user unit)

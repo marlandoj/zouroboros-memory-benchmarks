@@ -86,6 +86,39 @@ It is applied uniformly to every task; it never touches grading, checks, the jud
 transcript, or the app state; and a call that differs in any non-null value still fails the
 guard. Benchmark code is not modified.
 
+**Third rule (adapter 0.5.0, added during the 2026-11-24 full run, disclosed).** The server
+coerces a number to its parameter's declared type before logging it: the model sends
+`max_price_usd: 900`, the app log records `900.0`, and the guard's JSON key tells the two
+apart. In the full run's Morgan leg (adapter 0.4.0) this aborted grading of task 129 on the
+original attempt and both fresh re-runs (bound reached). The rule runs only after the exact,
+null and declared-default rules fail. For a transcript call of the same tool, after the same
+null and declared-default drops, it replaces an app-log number by the transcript's number at
+the same key path when the two are numerically equal and differ only in int/float type
+(bools excluded); then the same exact post-repair match must hold, or the guard still aborts.
+Repairs are logged with `"rule": "numeric-representation"` and `"retyped_keys"`. Offline
+replay (`scripts/repair_replay.py`) over 180 saved evidence files (both smoke runs, the
+full run's 0.4.0 Morgan attempt and its quarantined attempts): the 173 the guard already
+accepts are unchanged with zero repairs; all 7 crashed attempts now pass (the 3 task-129
+attempts via this rule, the 4 smoke attempts via the declared-default rule as before).
+Because the adapter identity changed, the full run restarted Morgan from a fresh run
+directory under 0.5.0; the 0.4.0 attempt is preserved, not merged into the result.
+
+## Full run (`scripts/full_run.sh`)
+
+`run_smoke.py` takes the persona and test count from `run.conf` (`ZO_BENCH_PERSONA`,
+`ZO_TEST_COUNT=all`; with neither set, the smoke's run identity is unchanged).
+`scripts/full_run.sh <cap USD> <run.conf>...` runs personas one after another, one run
+directory each, every stage a `systemd --user` unit; it checks cumulative cash every 60 s
+during evaluate (stopping at the cap), writes a projection from the first persona's measured
+rates (`scripts/full_cost.py`) and stops if it exceeds the cap, and applies the smoke's
+guard-crash policy (quarantine + fresh re-run, at most 2 re-runs per task) automatically.
+Launch it detached:
+
+```
+systemd-run --user --collect --unit=<name> -p StandardOutput=append:<log> \
+  /bin/bash scripts/full_run.sh 50 <morgan.conf> <alex.conf> <riley.conf>
+```
+
 ## Changes in this persisted copy relative to the first run (adapter 0.3.0)
 
 Behaviour the agent and the grader see is unchanged: same plugin bytes, same profile

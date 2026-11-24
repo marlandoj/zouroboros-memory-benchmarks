@@ -83,6 +83,14 @@ def main():
         total_seconds += secs
     projection["projected_total_cash_usd"] = total_cash
     projection["projected_total_wall_clock_seconds"] = total_seconds
+    # Superseded attempts (FULL_PRIOR_RUNS, space-separated run dirs) are sunk cash: counted
+    # against the cap, not used for the rates.
+    import os
+    prior = [Path(p) for p in os.environ.get("FULL_PRIOR_RUNS", "").split()]
+    if prior:
+        sunk = sum(legs(p)["total"] for p in prior)
+        projection["prior_attempts"] = {str(p): legs(p) for p in prior}
+        projection["projected_total_cash_usd"] = total_cash + sunk
     print(json.dumps(projection, indent=2))
 
 
