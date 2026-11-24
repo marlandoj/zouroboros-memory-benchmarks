@@ -17,6 +17,10 @@ Published benchmark results for the **Zouroboros Intelligence Plane** memory sys
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
 
+## 2026-11-23 Arm C — reasoning and timeline levers for the three weak BEAM abilities
+
+Follow-up to the parity decomposition, in [the Arm C report](arm-c-2026-11-23.md). On the 120 BEAM 100K questions in the three abilities that barely moved under parity (knowledge_update, multi_session_reasoning, contradiction_resolution), with stored Arm B evidence replayed byte-identically: enabling reader-side reasoning (`effort: medium`, reader only) gained **+3.81pp pooled over the re-run Arm B control, exceeding the 2.74pp nondeterminism band** measured on the same set (23 questions up, 12 down). Re-presenting the same evidence as an explicit chronological timeline gained +1.46pp — inside the noise band, **not shown**. Conclusion: a reader-side reasoning lever recovers a meaningful share of the weak-ability gap at zero ingest cost; ingest-time machinery should be justified against a reasoning-enabled reader baseline. Campaign cost $0.7588 against a $25 hard cap.
+
 ## 2026-11-23 past.dev parity decomposition — completed
 
 The completed paired runs are in [the parity report](parity-2026-11-23.md). BEAM 100K moved from 54.42% in November to 60.03% under configuration parity (+5.60pp) and 88.27% under prompt/model/judge parity (+28.25pp), leaving a 3.81pp residual to past.dev. LoCoMo under corrected keys with adversarial questions excluded moved from the recomputed November baseline of 66.04% to 81.95% (+15.91pp), leaving an 11.17pp residual; the original-key all-category continuity view moved from 58.26% to 70.24% (+11.98pp). All final rows are present with zero uncounted errors. The report also records the dated correction of four mislabelled November LoCoMo category codes, itemised costs, and the interrupted-run recovery disclosure.
