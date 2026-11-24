@@ -11,6 +11,10 @@ ZO_HERMES_SOURCE=$ZO_RUN_DIR/hermes-source
 # A local clone holding NousResearch/hermes-agent objects (935c1e8 must be reachable).
 ZO_HERMES_OBJECTS=/opt/zouroboros/benchmark-data/dolphinbench/hermes-reference
 ZO_IMAGE_TAG=dolphinbench-zo-agent:run2
+# Embedder pin (zouroboros-workspace PR #1115): repeat the first smoke's embedder. Leave both
+# unset to use the production default (text-embedding-3-large, 3072, on main since 2026-11-09).
+ZO_DOLPHINBENCH_EMBEDDING_MODEL=text-embedding-3-small
+ZO_DOLPHINBENCH_EMBEDDING_DIMENSION=1536
 ZO_APP_PYTHON=/opt/zouroboros/benchmark-data/dolphinbench/apps-venv/bin/python
 # DolphinBench release checkout pinned at 81cb6f8, with its .venv.
 DOLPHINBENCH_REPO=/opt/zouroboros/benchmark-data/dolphinbench/repo

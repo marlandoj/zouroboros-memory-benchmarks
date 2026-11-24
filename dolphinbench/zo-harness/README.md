@@ -100,6 +100,12 @@ templates, same toolsets, same model settings, same repair. What changed:
 - **Paths from `run.conf`.** One copy serves any run directory; see `run.conf.example`.
 - `freeze` also verifies the new checkpoint once from a fresh, locked server process (the
   task-phase configuration), and a `summary` stage writes aggregate per-task check counts.
+- **Embedder recorded, not assumed.** The first run's ingest record hard-coded
+  `text-embedding-3-small`; the model and its list price now come from the store. Note:
+  zouroboros-workspace main's production embedder has been `text-embedding-3-large` (3072)
+  since 2026-11-09; the first smoke embedded with 3-small only because its intelligence
+  `dist` was stale. `run.conf` can pin the embedder for a DolphinBench scratch store
+  (`ZO_DOLPHINBENCH_EMBEDDING_MODEL` / `_DIMENSION`, zouroboros-workspace PR #1115).
 
 ## Running a smoke
 

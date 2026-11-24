@@ -72,7 +72,9 @@ ZO_DB = RUN / "dolphinbench-morgan.db"
 ZO_URL = "http://127.0.0.1:8764"
 PERSONA = "morgan"
 TEST_COUNT = 25
-EMBEDDING_PRICE_PER_TOKEN = 0.02 / 1_000_000  # text-embedding-3-small, OpenAI list
+# OpenAI list prices; the model is read from the store, never assumed.
+EMBEDDING_PRICES_PER_TOKEN = {"text-embedding-3-small": 0.02 / 1_000_000,
+                              "text-embedding-3-large": 0.13 / 1_000_000}
 PLUGIN_FILES = ("plugins/memory/zo/__init__.py", "plugins/memory/zo/plugin.yaml")
 
 # Real provider credentials: never in this process (they would reach `docker create` argv).
@@ -277,14 +279,17 @@ def stage_ingest() -> None:
             print(f"ingest {offset + len(batch)}/{len(messages)}: "
                   f"+{stats['messagesIngested']} ({stats['embeddingTokens']} tokens)", flush=True)
         stats = http_json("GET", f"{ZO_URL}/stats", timeout=10)
-    cost = totals["embeddingTokens"] * EMBEDDING_PRICE_PER_TOKEN
+    model = stats.get("embeddingModel")
+    if model not in EMBEDDING_PRICES_PER_TOKEN:
+        raise SystemExit(f"No list price recorded for embedding model {model!r}")
+    cost = totals["embeddingTokens"] * EMBEDDING_PRICES_PER_TOKEN[model]
     record = {
         "persona": PERSONA,
         "sessions": len(messages),
         **totals,
         "store": stats,
-        "embedding_model": "text-embedding-3-small",
-        "embedding_price_per_token_usd": EMBEDDING_PRICE_PER_TOKEN,
+        "embedding_model": model,
+        "embedding_price_per_token_usd": EMBEDDING_PRICES_PER_TOKEN[model],
         "embedding_cost_usd": cost,
         "wall_clock_seconds": round(time.time() - started, 1),
     }
