@@ -336,15 +336,18 @@ def stage_evaluate() -> None:
 
 
 def stage_summary() -> None:
+    import yaml
     grades = OUT / "grades" / PERSONA
     tasks = {}
     for path in sorted(grades.glob("*.json")):
         checks = json.loads(path.read_text())["checks"]
+        spec = yaml.safe_load((REPO / "tests" / PERSONA / f"{path.stem}.yaml").read_text())
+        types = [a.get("type") for a in spec["grade"]["config"]["assertions"]]
         tasks[path.stem] = {
             "checks": len(checks),
             "passed": sum(1 for c in checks if c.get("passed")),
             "check_results": [{"check": c.get("check"), "passed": bool(c.get("passed")),
-                               "kind": "judge" if "messages" in c else "deterministic"}
+                               "type": types[c["check"]], "judge_called": "messages" in c}
                               for c in checks],
         }
     summary = {

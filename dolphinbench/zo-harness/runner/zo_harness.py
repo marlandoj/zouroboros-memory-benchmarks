@@ -36,6 +36,8 @@ scan (scripts/scan_logs.py) checks every log for it by hash.
 
 from __future__ import annotations
 
+import ast
+import functools
 import hashlib
 import json
 import os
@@ -76,9 +78,10 @@ def env_overlay(values: dict):
             else:
                 os.environ[key] = value
 
-ADAPTER_VERSION = "0.3.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+ADAPTER_VERSION = "0.4.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
 # 0.3.0: persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness); per-interaction
 # relay tokens instead of a shared relay password; repair logic unchanged from 0.2.0.
+# 0.4.0: second disclosed repair rule, declared non-null defaults of omitted parameters.
 ROOT = Path(harness.__file__).resolve().parents[1]
 # The benchmark's official test-phase toolsets (reference/artifacts.py MATRIX_TOOLSETS @81cb6f8).
 BENCH_TOOLSETS = ["dolphinbench-apps", "memory", "session_search"]
@@ -97,6 +100,47 @@ EMBEDDING_PRICE_PER_TOKEN = 0.02 / 1_000_000  # text-embedding-3-small, OpenAI l
 
 def sha(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+# Where the release's repair server (mock_mcp/repair_server.py build_server) finds each
+# tool's implementation: the first owner class that defines it, else the base server
+# module. Read with ast (no import side effects); only literal defaults are used.
+DEFAULT_SOURCES = (("repair_server.py", "CandidateSlack"), ("repair_calendar.py", "CandidateCalendar"),
+                   ("repair_records.py", "CandidateRecords"), ("repair_travel.py", "CandidateTravel"),
+                   ("repair_engineering.py", "CandidateEngineering"),
+                   ("repair_operations.py", "CandidateOperations"), ("repair_growth.py", "CandidateGrowth"),
+                   ("server.py", None))
+
+
+@functools.lru_cache(maxsize=None)
+def declared_defaults(tool: str) -> dict:
+    """{parameter: literal default} of the function the release's server runs for `tool`."""
+    for file, owner in DEFAULT_SOURCES:
+        tree = ast.parse((ROOT / "mock_mcp" / file).read_text())
+        scope = tree.body
+        if owner is not None:
+            classes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == owner]
+            if not classes:
+                continue
+            scope = classes[0].body
+        for node in scope:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == tool:
+                values = {}
+                positional = node.args.posonlyargs + node.args.args
+                for arg, default in zip(positional[len(positional) - len(node.args.defaults):],
+                                        node.args.defaults):
+                    try:
+                        values[arg.arg] = ast.literal_eval(default)
+                    except ValueError:
+                        pass
+                for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+                    if default is not None:
+                        try:
+                            values[arg.arg] = ast.literal_eval(default)
+                        except ValueError:
+                            pass
+                return values
+    return {}
 
 
 def post_json(url: str, body: dict, timeout: float = 120.0) -> dict:
@@ -304,6 +348,31 @@ class ZoHermesAdapter(HermesAdapter):
                 call["args"] = drop_nulls(call["args"])
                 repaired.append({"tool": call["tool"],
                                  "dropped_null_keys": sorted(set(before) - set(call["args"]))})
+                continue
+            # 0.4.0 rule (disclosed): the server also fills an OMITTED optional
+            # parameter with its declared non-null default (list_open_prs status
+            # -> "open"). Drop an app-log key only when the transcript call lacks
+            # it and its value equals the default the release's server code
+            # declares for that tool; then the same post-drop exact match applies.
+            defaults = declared_defaults(call["tool"])
+            for candidate in transcript:
+                if candidate["tool"] != call["tool"] or not isinstance(candidate["args"], dict):
+                    continue
+                dropped = sorted(k for k, v in call["args"].items()
+                                 if k not in candidate["args"] and k in defaults
+                                 and v is not None and v == defaults[k])
+                if not dropped:
+                    continue
+                trimmed = drop_nulls({k: v for k, v in call["args"].items() if k not in dropped})
+                target = key(call["tool"], drop_nulls(candidate["args"]))
+                if key(call["tool"], trimmed) == target and fuzzy[target] > 0:
+                    fuzzy[target] -= 1
+                    before = dict(call["args"])
+                    call["args"] = trimmed
+                    repaired.append({"tool": call["tool"], "rule": "declared-default",
+                                     "dropped_default_keys": dropped,
+                                     "dropped_null_keys": sorted(set(before) - set(trimmed) - set(dropped))})
+                    break
         if repaired:
             path = Path(self.home).parent / "app-call-repairs.json"
             log = json.loads(path.read_text()) if path.exists() else {}

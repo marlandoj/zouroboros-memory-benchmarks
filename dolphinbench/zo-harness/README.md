@@ -64,6 +64,24 @@ What the repair does, exactly, for each test-phase interaction after the agent f
 4. Every repaired call is appended to `<output>/app-call-repairs.json` under its task id, as
    `{"tool": ..., "dropped_null_keys": [...]}`.
 
+**Second rule (adapter 0.4.0, added during the 2026-11-24 remediation re-run, disclosed).**
+The server fills an *omitted* optional parameter with its declared default even when that
+default is not null: `list_open_prs(..., status="open")`. In the re-run, Luna sent
+`status: null` (allowed by the tool's docstring). Hermes's tool-call wrapper rejected that
+on argument validation, so the model re-sent the call without `status`, and the server logged
+`status: "open"`. The null rule cannot match that, so the guard aborted grading of task 021
+on three consecutive fresh attempts (and task 019 once). The second rule runs only after the
+exact and null rules fail. It drops an app-log key only when (a) the transcript call lacks
+the key, (b) its value is non-null, and (c) the value equals the literal default that the
+release's own server code declares for that tool and parameter. The default is read with
+`ast` from `mock_mcp/repair_*.py`'s `Candidate*` classes, falling back to
+`mock_mcp/server.py`, in `build_server`'s lookup order. After the drop, the same exact
+post-null-drop match must hold, or the guard still aborts. Repairs are logged with
+`"rule": "declared-default"` and `"dropped_default_keys"`. An offline replay over every
+saved evidence file of both smoke runs shows the rule changes nothing in any evidence
+the guard already accepts (45 files) and repairs exactly the 4 crashed attempts
+(`tools/repair_replay.py` in the remediation card).
+
 It is applied uniformly to every task; it never touches grading, checks, the judge, the
 transcript, or the app state; and a call that differs in any non-null value still fails the
 guard. Benchmark code is not modified.
@@ -71,7 +89,8 @@ guard. Benchmark code is not modified.
 ## Changes in this persisted copy relative to the first run (adapter 0.3.0)
 
 Behaviour the agent and the grader see is unchanged: same plugin bytes, same profile
-templates, same toolsets, same model settings, same repair. What changed:
+templates, same toolsets, same model settings. The null-key repair is unchanged; 0.4.0 adds
+the declared-default rule described above. What else changed:
 
 - **Credentials never reach a log.** The benchmark's container launcher passes the agent's
   provider variables as `docker create --env NAME=VALUE` arguments and allows
