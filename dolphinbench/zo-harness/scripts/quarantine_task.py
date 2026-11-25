@@ -15,19 +15,22 @@ import sys
 from pathlib import Path
 
 out, task, dest = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
-grade = out / "grades" / "morgan" / f"{task}.json"
+persona = sys.argv[4] if len(sys.argv) > 4 else "morgan"  # optional 4th arg: persona id
+if not persona.isalpha() or not persona.islower():
+    sys.exit(f"bad persona {persona!r}")
+grade = out / "grades" / persona / f"{task}.json"
 if grade.exists():
     sys.exit(f"{task} already has a grade; refusing to quarantine a graded task")
 dest.mkdir(parents=True, exist_ok=False)
 moved = []
 candidates = [
-    out / "tests" / "morgan" / f"{task}.json",
-    out / "tests" / "morgan" / f"{task}.returned",
-    out / "tests" / "morgan" / f"{task}.inflight",
-    out / "hermes" / "attempts" / "tests" / "morgan" / f"{task}.json",
-    *sorted((out / "hermes" / "costs" / "tests" / "morgan").glob(f"{task}-*.json")),
-    *sorted((out / "hermes" / "profiles").glob(f"morgan-test-{task}-a*")),
-    out / "hermes" / "test-traces" / "morgan" / f"{task}.jsonl",
+    out / "tests" / persona / f"{task}.json",
+    out / "tests" / persona / f"{task}.returned",
+    out / "tests" / persona / f"{task}.inflight",
+    out / "hermes" / "attempts" / "tests" / persona / f"{task}.json",
+    *sorted((out / "hermes" / "costs" / "tests" / persona).glob(f"{task}-*.json")),
+    *sorted((out / "hermes" / "profiles").glob(f"{persona}-test-{task}-a*")),
+    out / "hermes" / "test-traces" / persona / f"{task}.jsonl",
 ]
 for path in candidates:
     if path.exists():

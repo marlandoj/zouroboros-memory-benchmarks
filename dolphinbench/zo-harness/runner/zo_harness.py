@@ -78,10 +78,11 @@ def env_overlay(values: dict):
             else:
                 os.environ[key] = value
 
-ADAPTER_VERSION = "0.4.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+ADAPTER_VERSION = "0.5.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
 # 0.3.0: persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness); per-interaction
 # relay tokens instead of a shared relay password; repair logic unchanged from 0.2.0.
 # 0.4.0: second disclosed repair rule, declared non-null defaults of omitted parameters.
+# 0.5.0: third disclosed repair rule, int/float representation of equal numbers (full run).
 ROOT = Path(harness.__file__).resolve().parents[1]
 # The benchmark's official test-phase toolsets (reference/artifacts.py MATRIX_TOOLSETS @81cb6f8).
 BENCH_TOOLSETS = ["dolphinbench-apps", "memory", "session_search"]
@@ -141,6 +142,24 @@ def declared_defaults(tool: str) -> dict:
                             pass
                 return values
     return {}
+
+
+def align_numbers(value, reference, path, retyped):
+    """0.5.0 rule helper: `value` with each number that equals the number at the same key
+    path in `reference` but differs only in int/float type replaced by the reference's
+    number; changed paths are appended to `retyped`. Everything else is returned as is."""
+    def number(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if isinstance(value, dict) and isinstance(reference, dict):
+        return {k: align_numbers(v, reference[k], f"{path}.{k}" if path else k, retyped)
+                if k in reference else v for k, v in value.items()}
+    if isinstance(value, list) and isinstance(reference, list) and len(value) == len(reference):
+        return [align_numbers(v, r, f"{path}[{i}]", retyped)
+                for i, (v, r) in enumerate(zip(value, reference))]
+    if number(value) and number(reference) and type(value) is not type(reference) and value == reference:
+        retyped.append(path)
+        return reference
+    return value
 
 
 def post_json(url: str, body: dict, timeout: float = 120.0) -> dict:
@@ -373,6 +392,39 @@ class ZoHermesAdapter(HermesAdapter):
                                      "dropped_default_keys": dropped,
                                      "dropped_null_keys": sorted(set(before) - set(trimmed) - set(dropped))})
                     break
+            else:
+                # 0.5.0 rule (disclosed, added mid-run in the 2026-11-24 full run): the
+                # server coerces a number to its parameter's declared type before logging
+                # (the model sends max_price_usd 900, the app log has 900.0), and the
+                # guard's JSON key distinguishes 900 from 900.0. Only after the three
+                # rules above fail: for a transcript call of the same tool, after the
+                # same null and declared-default drops, replace an app-log number by the
+                # transcript's number at the same key path when the two are numerically
+                # equal and differ only in int/float type (bools excluded). Nothing else
+                # is changed; the same exact post-repair match must hold, or the guard
+                # still aborts.
+                for candidate in transcript:
+                    if candidate["tool"] != call["tool"] or not isinstance(candidate["args"], dict):
+                        continue
+                    dropped = sorted(k for k, v in call["args"].items()
+                                     if k not in candidate["args"] and k in defaults
+                                     and v is not None and v == defaults[k])
+                    trimmed = drop_nulls({k: v for k, v in call["args"].items() if k not in dropped})
+                    reference = drop_nulls(candidate["args"])
+                    retyped = []
+                    aligned = align_numbers(trimmed, reference, "", retyped)
+                    if not retyped:
+                        continue
+                    target = key(call["tool"], reference)
+                    if key(call["tool"], aligned) == target and fuzzy[target] > 0:
+                        fuzzy[target] -= 1
+                        before = dict(call["args"])
+                        call["args"] = aligned
+                        repaired.append({"tool": call["tool"], "rule": "numeric-representation",
+                                         "retyped_keys": retyped,
+                                         "dropped_default_keys": dropped,
+                                         "dropped_null_keys": sorted(set(before) - set(aligned) - set(dropped))})
+                        break
         if repaired:
             path = Path(self.home).parent / "app-call-repairs.json"
             log = json.loads(path.read_text()) if path.exists() else {}

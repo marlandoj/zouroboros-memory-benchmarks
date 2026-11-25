@@ -1,4 +1,8 @@
-"""DolphinBench x Zouroboros smoke driver: one persona, first 25 tests.
+"""DolphinBench x Zouroboros driver: one persona per run directory; first 25 tests (smoke) or all.
+
+Persona and test count come from run.conf (ZO_BENCH_PERSONA, default morgan; ZO_TEST_COUNT,
+default 25, or "all" for every test of the persona in benchmark order). With the defaults the
+run identity is the smoke's, unchanged. A full run uses one run directory per persona.
 
 Persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness). Same stages, same
 release filter, same Runner and grading as the first smoke (2026-11-23); what changed is
@@ -68,10 +72,13 @@ APP_PYTHON = os.environ.get("ZO_APP_PYTHON",
 VENV_PYTHON = REPO / ".venv/bin/python"
 ZO_SERVER_TS = WORKSPACE / "packages/memory/src/dolphinbench/server.ts"
 ZO_ENV_FILE = Path(required("ZO_ENV_FILE"))
-ZO_DB = RUN / "dolphinbench-morgan.db"
+PERSONA = os.environ.get("ZO_BENCH_PERSONA", "morgan")
+if not re.fullmatch(r"[a-z]+", PERSONA):
+    raise SystemExit(f"Bad ZO_BENCH_PERSONA {PERSONA!r}")
+_COUNT = os.environ.get("ZO_TEST_COUNT", "25")
+TEST_COUNT = None if _COUNT == "all" else int(_COUNT)  # None = every test, benchmark order
+ZO_DB = RUN / f"dolphinbench-{PERSONA}.db"
 ZO_URL = "http://127.0.0.1:8764"
-PERSONA = "morgan"
-TEST_COUNT = 25
 # OpenAI list prices; the model is read from the store, never assumed.
 EMBEDDING_PRICES_PER_TOKEN = {"text-embedding-3-small": 0.02 / 1_000_000,
                               "text-embedding-3-large": 0.13 / 1_000_000}
@@ -215,17 +222,23 @@ def make_adapter():
 def filtered_release():
     from harness.submission import read_release
     release = read_release(REPO)
-    morgan = release[PERSONA]
-    return {PERSONA: {**morgan, "tests": morgan["tests"][:TEST_COUNT]}}
+    persona = release[PERSONA]
+    if TEST_COUNT is None:
+        return {PERSONA: persona}
+    return {PERSONA: {**persona, "tests": persona["tests"][:TEST_COUNT]}}
 
 
 def make_runner(adapter, allow_paid: bool):
     from harness.runner import Runner
     release = filtered_release()
+    if TEST_COUNT is None:
+        config = {"release": str(REPO), "output": str(OUT), "adapter": "zo_harness:build",
+                  "subset": f"{PERSONA}:all", "smoke": False}
+    else:  # the smoke's identity, unchanged
+        config = {"release": str(REPO), "output": str(OUT), "adapter": "zo_harness:build",
+                  "subset": f"{PERSONA}:1-{TEST_COUNT}", "smoke": True}
     identity = {
-        "config": {"release": str(REPO), "output": str(OUT),
-                   "adapter": "zo_harness:build", "subset": f"{PERSONA}:1-{TEST_COUNT}",
-                   "smoke": True},
+        "config": config,
         "code": {},
         "adapter": adapter.identity(),
     }
@@ -238,7 +251,8 @@ def stage_prepare() -> None:
     release = read_release(REPO)
     sessions = len(release[PERSONA]["sessions"])
     tests = len(release[PERSONA]["tests"])
-    print(f"release ok: {PERSONA} sessions={sessions} tests={tests}")
+    selected = len(filtered_release()[PERSONA]["tests"])
+    print(f"release ok: {PERSONA} sessions={sessions} tests={tests} selected={selected}")
     print("plugin matches persisted copy:", json.dumps(assert_plugin_from_persisted_copy()))
     adapter = make_adapter()
     identity = adapter.identity()
@@ -265,7 +279,7 @@ def stage_ingest() -> None:
         config.unlink()
         make_runner(adapter, allow_paid=False)
         config.write_bytes(content)
-    history = RUN / "history-morgan.jsonl"
+    history = RUN / f"history-{PERSONA}.jsonl"
     if not history.exists():
         subprocess.run([str(VENV_PYTHON), str(RUNNER_DIR / "export_history.py"), PERSONA, str(history)],
                        check=True)
