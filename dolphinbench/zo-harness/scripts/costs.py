@@ -61,4 +61,12 @@ result = {
 }
 result["total_cash_usd"] = round(result["embeddings"]["cash_usd"] + result["agent"]["cash_usd"]
                                  + result["judge"]["cash_usd"], 6)
+# 0.6.0 ingest legs (verbatim / extraction / consolidation), itemised when recorded.
+if "legs" in ingestion:
+    result["ingest_legs"] = {
+        leg: {"embedding_tokens": int(v.get("embeddingTokens") or 0),
+              "embedding_cash_usd": round(float(v.get("embedding_cost_usd") or 0), 6),
+              "model_cash_usd": round(float(v.get("model_cost_usd") or 0), 6)}
+        for leg, v in ingestion["legs"].items()
+    }
 print(json.dumps(result, indent=2))
