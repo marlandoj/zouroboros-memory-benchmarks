@@ -2,12 +2,13 @@
 
 Published benchmark results for the **Zouroboros Intelligence Plane** memory system.
 
-## Current results (2026-11-23)
+## Current results (2026-11-25)
 
-The headline numbers are the past.dev parity runs of 2026-11-23: Zouroboros retrieval scored under matched conditions (up to 100 results, 8,000-token evidence budget, text-embedding-3-large, threshold 0.2). Full detail in [the parity report](parity-2026-11-23.md) and [the Arm C follow-up](arm-c-2026-11-23.md).
+The headline numbers are the past.dev parity runs of 2026-11-23 (Zouroboros retrieval under matched conditions: up to 100 results, 8,000-token evidence budget, text-embedding-3-large, threshold 0.2) and the DolphinBench full run of 2026-11-24 (memory graded by agent actions in simulated work apps, not by answers). Full detail in [the parity report](parity-2026-11-23.md), [the Arm C follow-up](arm-c-2026-11-23.md), and [the DolphinBench full-run report](dolphinbench-full-2026-11-24.md).
 
 | Benchmark | Score | Configuration | Reader | Judge | Date |
 |-----------|-------|---------------|--------|-------|------|
+| DolphinBench (600 tasks, 3 personas) | **428/600 (71.3%)** | Full run; direct adapter ingestion (published field used agent-mediated ingestion); text-embedding-3-large; total cash cost $8.75 | gpt-5.6-luna (Hermes Agent) | gpt-5.6-sol | 2026-11-24 |
 | BEAM (100K) | **88.27%** | Parity retrieval + ExaBase prompts | gpt-5.6-luna | gpt-5.6-luna | 2026-11-23 |
 | BEAM (100K) | **60.03%** | Parity retrieval, own prompts/models | gpt-6.1-sol | gpt-4o | 2026-11-23 |
 | BEAM (100K) | **54.42%** | November baseline (K=10) | gpt-6.1-sol | gpt-4o | 2026-11-08 |
@@ -17,6 +18,8 @@ The headline numbers are the past.dev parity runs of 2026-11-23: Zouroboros retr
 | LongMemEval (full S, real embeddings) | **85.4%** | No newer run; November figure stands | gpt-6.1-sol | gpt-4o | 2026-11-08 |
 
 Against past.dev's published figures (BEAM 100K 92.08%, LoCoMo 93.12%), the parity decomposition attributes the BEAM gap as +5.60pp configuration, +28.25pp prompt/model/judge, and a +3.81pp residual; LoCoMo's parity view leaves an +11.17pp residual with no prompt/model arm run. Arm C (2026-11-23) further showed reader-side reasoning recovers +3.81pp pooled on the three weakest BEAM abilities over the re-run control, beyond the measured 2.74pp nondeterminism band.
+
+On DolphinBench, the published Hermes + GPT-5.6-Luna field is past.dev 490, Mem0 424, Hindsight 417, Honcho 411, Hermes built-in 394, Supermemory 355 — Zouroboros's 428 sits second, at a small fraction of the published runs' cost ($8.75 against $61–$346), with the ingestion difference stated in the table above and weighed in the full report.
 
 ## Results history
 
@@ -32,6 +35,10 @@ Against past.dev's published figures (BEAM 100K 92.08%, LoCoMo 93.12%), the pari
 | LongMemEval (oracle, perfect retrieval) | **84.0%** | gpt-5-mini | gpt-4o | 2026-10-15 |
 | LoCoMo | **40.7%** (K=100) | gpt-5-mini | gpt-4o | 2026-10-16 |
 | BEAM (100K) | **47.8%** (chrono) | gpt-5-mini | gpt-4o | 2026-10-16 |
+
+## 2026-11-24 DolphinBench — full run (428/600)
+
+Mem0's DolphinBench grades memory by actions: an agent ingests a synthetic knowledge worker's full history (~500K tokens), the store is locked, and the agent performs 200 tool-using tasks per persona in simulated apps (Gmail, Notion, GitHub, Discord, calendar, CRM), graded by deterministic app-state checks plus the benchmark's GPT-5.6-Sol judge. Zouroboros's adapter scored **Morgan Chen 156/200, Alex 128/200, Riley 144/200 — 428/600 pooled (71.3%), 1,401/1,920 checks** — second in the published Hermes + Luna field (past.dev 490, Mem0 424, Hindsight 417, Honcho 411, Hermes built-in 394, Supermemory 355), at a total cash cost of **$8.75**. One configuration difference is stated wherever the comparison is made: this run ingested each history directly through the adapter, while the published rows used agent-mediated ingestion. The full report carries the per-kind splits, the reconciled per-leg costs, and the complete incident account of a run that survived a card timeout, a mid-run adapter repair, a full-disk death (with the 56 in-flight grades validated 56/56 under the operator's ruling before resuming), and a provider outage. A preceding 25-task smoke and its remediation re-run (18/25, then 17/25, 24/25 tasks grading identically) are in [the smoke report](dolphinbench-smoke-2026-11-23.md); the persisted evaluation harness is in this repo under the PR #4 merge.
 
 ## 2026-11-23 Arm C — reasoning and timeline levers for the three weak BEAM abilities
 
