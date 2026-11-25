@@ -407,9 +407,50 @@ def stage_evaluate() -> None:
         raise SystemExit("The judge relay capability is missing (stage.sh loads it for evaluate)")
     adapter = make_adapter()
     runner = make_runner(adapter, allow_paid=True)
+    disposed = disposed_tests()
     with ZoServer(locked=True):
-        runner.evaluate()
+        if not disposed:
+            runner.evaluate()  # unchanged path: no operator-disposed test in this run dir
+        else:
+            evaluate_skipping(runner, disposed)
     print("evaluate complete")
+
+
+def disposed_tests() -> set[str]:
+    """Test ids an operator ruling disposed (RUN/dispositions.json). A disposed test is not
+    executed or graded again; it is scored as a failed task by the aggregates. Its evidence
+    (including an .inflight marker the Runner would refuse to pass) stays where it lies."""
+    path = RUN / "dispositions.json"
+    if not path.exists():
+        return set()
+    tests = json.loads(path.read_text())["tests"]
+    for test_id, entry in tests.items():
+        if entry.get("disposition") != "failed_by_operator_ruling" or not entry.get("ruled_by"):
+            raise SystemExit(f"dispositions.json: {test_id} has no operator ruling")
+    return set(tests)
+
+
+def evaluate_skipping(runner, disposed: set[str]) -> None:
+    """Runner.evaluate(), statement for statement, except that disposed test ids are skipped.
+    Uses the Runner's own _execute/_grade/_saved_cost/_collect_cost; grading is unchanged."""
+    from harness.runner import load_json, save  # the Runner module's own bindings
+    for persona in runner.release:
+        path = runner.directory / "checkpoints" / f"{persona}.json"
+        if not path.exists():
+            raise ValueError(f"Complete ingestion first: {persona}")
+        runner.adapter.verify_checkpoint(persona, load_json(path.read_bytes()))
+    runner._saved_cost("ingestion")
+    for persona, release in runner.release.items():
+        for spec in release["tests"]:
+            test_id = str(spec["id"]).zfill(3)
+            if test_id in disposed:
+                print(f"test {persona}/{test_id}: disposed by operator ruling (dispositions.json); skipped")
+                continue
+            evidence = runner._execute("tests", persona, spec)
+            grade_path = runner._path("grades", persona, test_id)
+            if not grade_path.exists():
+                save(grade_path, runner._grade(spec, evidence))
+    runner._collect_cost("tests")
 
 
 def stage_summary() -> None:
