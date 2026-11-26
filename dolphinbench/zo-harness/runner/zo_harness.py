@@ -80,7 +80,7 @@ def env_overlay(values: dict):
             else:
                 os.environ[key] = value
 
-ADAPTER_VERSION = "0.6.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+ADAPTER_VERSION = "0.6.1"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
 # 0.3.0: persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness); per-interaction
 # relay tokens instead of a shared relay password; repair logic unchanged from 0.2.0.
 # 0.4.0: second disclosed repair rule, declared non-null defaults of omitted parameters.
@@ -91,8 +91,15 @@ ADAPTER_VERSION = "0.6.0"  # 0.2.0: null-enrichment app-call evidence repair (di
 # useLlm false); /recall serves facts and observations under the adapter's RECALL_MERGE_RULE;
 # freeze is checkpoint v3 (observations + evidence links hashed). The three repair rules,
 # the plugin, the profile templates, toolsets and model settings are unchanged.
+# 0.6.1: parity confirmation re-run (2026-11-26, resolution 4): the memory adapter is 0.6.1
+# (zouroboros-workspace PR #1121: production searchObservations v2, a term tier after the v1
+# substring tier) and the adapter server runs the verbatim-priority recall merge rule
+# (ZO_DOLPHINBENCH_RECALL_MERGE, set by run_smoke.py from RECALL_MERGE_RULE_NAME and checked
+# against /stats.recallMergeRuleName on every server start). Ingest pipeline, repair rules,
+# plugin, profile templates, toolsets and model settings are unchanged from 0.6.0.
 # The zo adapter server must report this version (run_smoke.py checks /stats.adapterVersion).
-ZO_SERVER_ADAPTER_VERSION = "0.6.0"
+ZO_SERVER_ADAPTER_VERSION = "0.6.1"
+RECALL_MERGE_RULE_NAME = "verbatim-priority"
 INGEST_PIPELINE = {
     "stages": ["verbatim", "extraction", "consolidation"],
     "extractor": "packages/memory/src/capture.ts#extractFromText",
@@ -100,7 +107,10 @@ INGEST_PIPELINE = {
     "extractor_model": None,
     "consolidation": {"function": "packages/memory/src/observations.ts#consolidateObservations",
                       "minProof": 2, "useLlm": False},
-    "recall": "searchFactsHybrid + searchObservations, RECALL_MERGE_RULE (observation share 0.25)",
+    "recall": "searchFactsHybrid (pool 3x limit) + searchObservations v2, VERBATIM_PRIORITY_RULE "
+              "(verbatim first, then beliefs (at most 0.25 of the page), then extracted)",
+    "recall_merge_rule": RECALL_MERGE_RULE_NAME,
+    "observation_search_version": 2,
     "checkpoint": "dolphinbench-checkpoint-v3",
 }
 ROOT = Path(harness.__file__).resolve().parents[1]
