@@ -8,9 +8,11 @@ Differences from the full-benchmark procedure, per the smoke commission:
 
 - Ingestion is adapter-side and direct: every history message is ingested through the
   Zouroboros memory system's standard ingest path (packages/memory/src/dolphinbench) with its
-  timestamp, not through per-message Hermes turns. The store is then locked (PRAGMA query_only
-  plus an adapter lock) and checkpointed (v2: SHA-256 over the ordered dolphinbench-scoped
-  rows plus row counts; the DB file hash is informational only).
+  timestamp, not through per-message Hermes turns. Since 0.6.0 the ingest stage then runs the
+  adapter's extraction and consolidation stages (INGEST_PIPELINE). The store is then locked
+  (PRAGMA query_only plus an adapter lock) and checkpointed (v3: SHA-256 over the ordered
+  dolphinbench-scoped rows, observations and evidence links, plus row counts; the DB file hash
+  is informational only).
 - Tests run on the benchmark's official test-phase toolsets: dolphinbench-apps, memory,
   session_search (reference/artifacts.py MATRIX_TOOLSETS at 81cb6f8). The agent recalls through
   the plugin's zo_recall tool against the frozen store served by the adapter server.
@@ -78,11 +80,29 @@ def env_overlay(values: dict):
             else:
                 os.environ[key] = value
 
-ADAPTER_VERSION = "0.5.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
+ADAPTER_VERSION = "0.6.0"  # 0.2.0: null-enrichment app-call evidence repair (disclosed)
 # 0.3.0: persisted copy (zouroboros-memory-benchmarks/dolphinbench/zo-harness); per-interaction
 # relay tokens instead of a shared relay password; repair logic unchanged from 0.2.0.
 # 0.4.0: second disclosed repair rule, declared non-null defaults of omitted parameters.
 # 0.5.0: third disclosed repair rule, int/float representation of equal numbers (full run).
+# 0.6.0: production-parity ingest arm (2026-11-25): after the verbatim pass, the ingest stage
+# runs the memory adapter's extraction stage (production capture extraction, capture.ts
+# extractFromText) and consolidation stage (production consolidateObservations, minProof 2,
+# useLlm false); /recall serves facts and observations under the adapter's RECALL_MERGE_RULE;
+# freeze is checkpoint v3 (observations + evidence links hashed). The three repair rules,
+# the plugin, the profile templates, toolsets and model settings are unchanged.
+# The zo adapter server must report this version (run_smoke.py checks /stats.adapterVersion).
+ZO_SERVER_ADAPTER_VERSION = "0.6.0"
+INGEST_PIPELINE = {
+    "stages": ["verbatim", "extraction", "consolidation"],
+    "extractor": "packages/memory/src/capture.ts#extractFromText",
+    "extractor_kind": "heuristic-patterns",
+    "extractor_model": None,
+    "consolidation": {"function": "packages/memory/src/observations.ts#consolidateObservations",
+                      "minProof": 2, "useLlm": False},
+    "recall": "searchFactsHybrid + searchObservations, RECALL_MERGE_RULE (observation share 0.25)",
+    "checkpoint": "dolphinbench-checkpoint-v3",
+}
 ROOT = Path(harness.__file__).resolve().parents[1]
 # The benchmark's official test-phase toolsets (reference/artifacts.py MATRIX_TOOLSETS @81cb6f8).
 BENCH_TOOLSETS = ["dolphinbench-apps", "memory", "session_search"]
@@ -289,6 +309,7 @@ class ZoHermesAdapter(HermesAdapter):
             "adapter_source_sha256": sha(Path(__file__).read_bytes()),
             "memory_provider": "zouroboros",
             "adapter_module": "packages/memory/src/dolphinbench",
+            "ingest_pipeline": INGEST_PIPELINE,
             "toolsets": list(BENCH_TOOLSETS),
             "agent": {key: AGENT_SPEC[key] for key in
                       ("provider", "model", "api_mode", "context_length", "reasoning_effort", "max_turns")},

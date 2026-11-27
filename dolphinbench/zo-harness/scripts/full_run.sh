@@ -1,6 +1,6 @@
 #!/bin/bash
 # Full DolphinBench run: personas in sequence, each in its own run directory (its own run.conf),
-# each ingested, frozen (v2 checkpoint), then evaluated on all its tests, with a cash cap.
+# each ingested, frozen (v3 checkpoint since adapter 0.6.0), then evaluated on all its tests, with a cash cap.
 # Run it detached (launch it with systemd-run --user; see the README "Full run"):
 #
 #   bash full_run.sh <cap USD> <run.conf> [<run.conf> ...]

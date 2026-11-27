@@ -25,11 +25,13 @@ Stages (each resumable; completed work is never repeated):
 
   prepare   Local checks: release validates, adapter identity builds, plugin identity
             matches the persisted copy, zo adapter server answers. No paid calls.
-  ingest    Export Morgan's history and push it through the Zouroboros adapter server (the
-            memory system's standard ingest path), then record the embedding cost.
-  freeze    Freeze + checkpoint the store (adapter /freeze, v2 content hash, and Hermes
-            profile), verify the checkpoint once, write the runner checkpoint, collect the
-            ingestion cost.
+  ingest    Export the persona's history and push it through the Zouroboros adapter server:
+            verbatim pass (/ingest), then (0.6.0) the extraction stage (/extract, production
+            capture extraction per session) and the consolidation stage (/consolidate,
+            production consolidateObservations); record per-leg costs and counts.
+  freeze    Freeze + checkpoint the store (adapter /freeze, v3 content hash incl. observations
+            and evidence links, and Hermes profile), verify the checkpoint once from a fresh
+            locked server process, write the runner checkpoint, collect the ingestion cost.
   evaluate  Run the first 25 Morgan tests through the benchmark's own Runner and grading
             (deterministic checks + the fixed gpt-5.6-sol judge via the local judge relay).
   summary   Aggregate per-task check pass counts (no dataset content) to summary.json.
@@ -263,6 +265,10 @@ def stage_prepare() -> None:
     with ZoServer(locked=False):
         stats = http_json("GET", f"{ZO_URL}/stats", timeout=10)
         print("zo server:", json.dumps(stats))
+        from zo_harness import ZO_SERVER_ADAPTER_VERSION
+        if stats.get("adapterVersion") != ZO_SERVER_ADAPTER_VERSION:
+            raise SystemExit(f"zo adapter server reports {stats.get('adapterVersion')!r}, "
+                             f"expected {ZO_SERVER_ADAPTER_VERSION} (stale ZO_WORKSPACE?)")
     print("prepare complete (no paid calls)")
 
 
@@ -288,8 +294,21 @@ def stage_ingest() -> None:
     started = time.time()
     totals = {"messagesIngested": 0, "messagesResumed": 0, "messagesSkipped": 0,
               "embeddingTokens": 0, "embeddingRequests": 0, "batches": 0}
+    extraction = {"chunksProcessed": 0, "chunksResumed": 0, "chunksSkipped": 0, "chunksFailed": 0,
+                  "chunksEmpty": 0, "factsExtracted": 0, "factsStored": 0, "factsBlocked": 0,
+                  "episodesExtracted": 0, "episodesStored": 0, "embeddedFacts": 0,
+                  "embeddingTokens": 0, "embeddingRequests": 0, "batches": 0}
+    failures = []
+    extractor = None
+    from zo_harness import ZO_SERVER_ADAPTER_VERSION
     with ZoServer(locked=False):
+        server = http_json("GET", f"{ZO_URL}/stats", timeout=10)
+        if server.get("adapterVersion") != ZO_SERVER_ADAPTER_VERSION:
+            raise SystemExit(f"zo adapter server reports {server.get('adapterVersion')!r}, "
+                             f"expected {ZO_SERVER_ADAPTER_VERSION} (stale ZO_WORKSPACE?)")
         batch_size = 200
+        # Stage 1: verbatim (one fact + one episode per message, as in 0.5.0).
+        verbatim_started = time.time()
         for offset in range(0, len(messages), batch_size):
             batch = messages[offset:offset + batch_size]
             stats = http_json("POST", f"{ZO_URL}/ingest", {"messages": batch}, timeout=1800)
@@ -299,19 +318,63 @@ def stage_ingest() -> None:
             totals["batches"] += 1
             print(f"ingest {offset + len(batch)}/{len(messages)}: "
                   f"+{stats['messagesIngested']} ({stats['embeddingTokens']} tokens)", flush=True)
+        verbatim_seconds = round(time.time() - verbatim_started, 1)
+        # Stage 2: extraction (production capture extraction, one chunk per session).
+        extraction_started = time.time()
+        for offset in range(0, len(messages), batch_size):
+            batch = messages[offset:offset + batch_size]
+            stats = http_json("POST", f"{ZO_URL}/extract", {"messages": batch}, timeout=1800)
+            for key in extraction:
+                if key != "batches":
+                    extraction[key] += stats[key]
+            extraction["batches"] += 1
+            failures.extend(stats["failures"])
+            extractor = {"function": stats["extractor"], "kind": stats["extractorKind"],
+                         "model": stats["extractorModel"]}
+            print(f"extract {offset + len(batch)}/{len(messages)}: +{stats['factsStored']} facts, "
+                  f"+{stats['episodesStored']} episodes, {stats['chunksFailed']} failed chunks "
+                  f"({stats['embeddingTokens']} tokens)", flush=True)
+        extraction_seconds = round(time.time() - extraction_started, 1)
+        (OUT / "hermes/accounting/extraction-failures.json").write_text(
+            json.dumps(failures, indent=2) + "\n")
+        attempted = extraction["chunksProcessed"]
+        if attempted and extraction["chunksFailed"] / attempted > 0.05:
+            raise SystemExit(f"extraction mass failure: {extraction['chunksFailed']}/{attempted} chunks failed")
+        # Stage 3: consolidation (production consolidateObservations, production defaults).
+        consolidation = http_json("POST", f"{ZO_URL}/consolidate", {}, timeout=1800)
+        print("consolidate:", json.dumps(consolidation), flush=True)
         stats = http_json("GET", f"{ZO_URL}/stats", timeout=10)
     model = stats.get("embeddingModel")
     if model not in EMBEDDING_PRICES_PER_TOKEN:
         raise SystemExit(f"No list price recorded for embedding model {model!r}")
-    cost = totals["embeddingTokens"] * EMBEDDING_PRICES_PER_TOKEN[model]
+    price = EMBEDDING_PRICES_PER_TOKEN[model]
+    verbatim_cost = totals["embeddingTokens"] * price
+    extraction_cost = extraction["embeddingTokens"] * price
     record = {
         "persona": PERSONA,
         "sessions": len(messages),
+        "adapter_version": server.get("adapterVersion"),
         **totals,
+        # Totals across legs (costs.py / full_cost.py read these two keys).
+        "embeddingTokens": totals["embeddingTokens"] + extraction["embeddingTokens"],
+        "embeddingRequests": totals["embeddingRequests"] + extraction["embeddingRequests"],
         "store": stats,
         "embedding_model": model,
-        "embedding_price_per_token_usd": EMBEDDING_PRICES_PER_TOKEN[model],
-        "embedding_cost_usd": cost,
+        "embedding_price_per_token_usd": price,
+        "embedding_cost_usd": verbatim_cost + extraction_cost,
+        "legs": {
+            "verbatim": {"embeddingTokens": totals["embeddingTokens"],
+                         "embeddingRequests": totals["embeddingRequests"],
+                         "embedding_cost_usd": verbatim_cost, "model_cost_usd": 0.0,
+                         "wall_clock_seconds": verbatim_seconds},
+            "extraction": {**extraction, "extractor": extractor, "failures": len(failures),
+                           "embedding_cost_usd": extraction_cost,
+                           # The exported capture extractor makes no model call.
+                           "model_cost_usd": 0.0, "wall_clock_seconds": extraction_seconds},
+            "consolidation": {**consolidation, "embedding_cost_usd": 0.0,
+                              # useLlm false: deterministic belief synthesis, no model call.
+                              "model_cost_usd": 0.0},
+        },
         "wall_clock_seconds": round(time.time() - started, 1),
     }
     (OUT / "hermes/accounting/ingestion.json").write_text(json.dumps(record, indent=2) + "\n")
@@ -344,9 +407,50 @@ def stage_evaluate() -> None:
         raise SystemExit("The judge relay capability is missing (stage.sh loads it for evaluate)")
     adapter = make_adapter()
     runner = make_runner(adapter, allow_paid=True)
+    disposed = disposed_tests()
     with ZoServer(locked=True):
-        runner.evaluate()
+        if not disposed:
+            runner.evaluate()  # unchanged path: no operator-disposed test in this run dir
+        else:
+            evaluate_skipping(runner, disposed)
     print("evaluate complete")
+
+
+def disposed_tests() -> set[str]:
+    """Test ids an operator ruling disposed (RUN/dispositions.json). A disposed test is not
+    executed or graded again; it is scored as a failed task by the aggregates. Its evidence
+    (including an .inflight marker the Runner would refuse to pass) stays where it lies."""
+    path = RUN / "dispositions.json"
+    if not path.exists():
+        return set()
+    tests = json.loads(path.read_text())["tests"]
+    for test_id, entry in tests.items():
+        if entry.get("disposition") != "failed_by_operator_ruling" or not entry.get("ruled_by"):
+            raise SystemExit(f"dispositions.json: {test_id} has no operator ruling")
+    return set(tests)
+
+
+def evaluate_skipping(runner, disposed: set[str]) -> None:
+    """Runner.evaluate(), statement for statement, except that disposed test ids are skipped.
+    Uses the Runner's own _execute/_grade/_saved_cost/_collect_cost; grading is unchanged."""
+    from harness.runner import load_json, save  # the Runner module's own bindings
+    for persona in runner.release:
+        path = runner.directory / "checkpoints" / f"{persona}.json"
+        if not path.exists():
+            raise ValueError(f"Complete ingestion first: {persona}")
+        runner.adapter.verify_checkpoint(persona, load_json(path.read_bytes()))
+    runner._saved_cost("ingestion")
+    for persona, release in runner.release.items():
+        for spec in release["tests"]:
+            test_id = str(spec["id"]).zfill(3)
+            if test_id in disposed:
+                print(f"test {persona}/{test_id}: disposed by operator ruling (dispositions.json); skipped")
+                continue
+            evidence = runner._execute("tests", persona, spec)
+            grade_path = runner._path("grades", persona, test_id)
+            if not grade_path.exists():
+                save(grade_path, runner._grade(spec, evidence))
+    runner._collect_cost("tests")
 
 
 def stage_summary() -> None:

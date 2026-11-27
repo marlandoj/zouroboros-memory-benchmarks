@@ -119,6 +119,36 @@ systemd-run --user --collect --unit=<name> -p StandardOutput=append:<log> \
   /bin/bash scripts/full_run.sh 50 <morgan.conf> <alex.conf> <riley.conf>
 ```
 
+## Production-parity ingest arm (adapter 0.6.0, 2026-11-25)
+
+A separate arm, reported against the direct-ingest baseline (0.5.0, 428/600), not a repair.
+The ingest stage keeps the 0.5.0 verbatim pass (one fact + one episode per message) and adds
+two adapter stages before freeze, both reusing exported production functions unchanged
+(zouroboros-workspace `packages/memory/src/dolphinbench/adapter.ts`):
+
+- **Extraction** (`/extract`): each session's message is one chunk run through the memory
+  package's exported capture extraction (`capture.ts` `extractFromText`, the extractor behind
+  `autoCapture`). Extracted facts are stored through `storeFact` with their own entity/key/value
+  and autoCapture's parameters (decay `stable`, importance 1.5 for decisions), metadata
+  `layer: extracted`, session id and narrative date, `created_at` rewound to the narrative date.
+  That extractor is heuristic (pattern-based) and makes no model call: the recorded extractor
+  model is `null`. The model-backed extractor (`standalone/auto-capture.ts`, model-client
+  workload `extraction`) is a private function of a CLI script and is not reusable as exported;
+  it is not forked here. Failed chunks are rolled back, counted and listed in
+  `hermes/accounting/extraction-failures.json`; more than 5% failed chunks stops the stage.
+- **Consolidation** (`/consolidate`): `consolidateObservations` for the persona with the
+  production defaults (`minProof` 2, `useLlm` false).
+- **Recall union**: `/recall` merges `searchObservations` beliefs into the `searchFactsHybrid`
+  page under the adapter's `RECALL_MERGE_RULE`: beliefs first, at most a quarter of the page
+  (5 of 20), a belief dropped when its newest supporting fact is already on the page, facts
+  never dropped for a belief. Extracted-fact excerpts are labelled `entity[.key]: value`. The
+  plugin is unchanged (dated excerpts capped at 1,500 chars).
+- **Freeze**: checkpoint v3 hashes observations and their evidence links too; the fresh-process
+  verification covers them.
+- `ingestion.json` itemises the three legs (`legs.verbatim|extraction|consolidation`), and
+  `costs.py` prints them as `ingest_legs`. `run_smoke.py` refuses an adapter server that does
+  not report version 0.6.0.
+
 ## Changes in this persisted copy relative to the first run (adapter 0.3.0)
 
 Behaviour the agent and the grader see is unchanged: same plugin bytes, same profile
