@@ -165,6 +165,7 @@ class ZoServer:
         self.process = None
 
     def __enter__(self):
+        from zo_harness import RECALL_MERGE_RULE_NAME
         OUT.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env.pop("AZURE_OPENAI_API_KEY", None)
@@ -174,6 +175,8 @@ class ZoServer:
             "ZO_EMBED_PROVIDER": "openai",
             "ZO_DOLPHINBENCH_PORT": "8764",
             "ZO_LOCKED": "1" if self.locked else "0",
+            # Adapter 0.6.1: the recall merge rule is part of the run identity (zo_harness.py).
+            "ZO_DOLPHINBENCH_RECALL_MERGE": RECALL_MERGE_RULE_NAME,
             # Task phase: the containerised agent recalls through the bridge.
             "ZO_BIND_HOST": "0.0.0.0" if self.locked else "127.0.0.1",
         })
@@ -186,10 +189,15 @@ class ZoServer:
             if self.process.poll() is not None:
                 raise RuntimeError("zo adapter server exited on startup; see zo-server.log")
             try:
-                http_json("GET", f"{ZO_URL}/stats", timeout=5)
-                return self
+                stats = http_json("GET", f"{ZO_URL}/stats", timeout=5)
             except Exception:
                 time.sleep(0.5)
+                continue
+            if stats.get("recallMergeRuleName") != RECALL_MERGE_RULE_NAME:
+                self.__exit__(None, None, None)
+                raise SystemExit(f"zo adapter server runs recall merge rule "
+                                 f"{stats.get('recallMergeRuleName')!r}, expected {RECALL_MERGE_RULE_NAME}")
+            return self
         raise RuntimeError("zo adapter server did not start in 60s")
 
     def __exit__(self, *exc):
