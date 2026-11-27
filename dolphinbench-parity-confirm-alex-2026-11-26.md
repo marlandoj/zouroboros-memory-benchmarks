@@ -36,11 +36,16 @@ text appear here.
 
 Verified from the code before any paid call (card PROGRESS.md records each check).
 
-- **Memory code.** zouroboros-workspace PR #1121 (OPEN, not merged; not deployed), head
+- **Memory code.** zouroboros-workspace PR #1121 (OPEN at the start; not merged by this card; nothing deployed), head
   `memory/observation-term-retrieval` @ `34e8f4ff462ed370cc7e18df9f1e5a137f197469`, cloned and built
   fresh (core, intelligence, rag, memory). Against the parity arm's `945a5016` (an ancestor): no
   change in core, intelligence, rag, `capture.ts`, `facts.ts` or episodes; `observations.ts` changes
   only search (no consolidation line); `adapter.ts` changes only recall. The adapter reports 0.6.1.
+  The PR was merged by the PR manager at 20:31Z, during this run's evaluation (merge commit
+  `2f3940e6`, after a main-merge into the branch). That merge adds only an unrelated package
+  (`packages/workshop-lessons`): core, intelligence, rag and memory are byte-identical between
+  `34e8f4ff` and `2f3940e6`, so the tested memory code is also main's at the merge. The run's
+  checkout was not changed while it ran.
 - **Ingest: identical to the parity arm, into a fresh store built by this run.** Verbatim layer
   (one fact + one episode per message), heuristic extraction (`capture.ts` `extractFromText`, no
   model), `consolidateObservations` with `minProof` 2, `useLlm` false. Every ingest count equals
